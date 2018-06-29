@@ -8,14 +8,13 @@ require(countrycode, quietly = TRUE)
 # Loading input data
 load(file = "1_process/bumo_rare.Rdata")
 rare <- bumo_rare 
-
-# ----- Author -----
 rare <- rare[order(rare$year, rare$author), ]
 
+# ----- Author -----
 # Extracting unique authors
 original <- unlist(strsplit(rare$author, split = " and "))
 
-original <- original[!duplicated(original)]
+original <- original[!duplicated(tolower(original))]
 authors <- as.data.frame(original, stringsAsFactors = FALSE)
 authors$name <- authors$original
 authors$order <- 1:nrow(authors)
@@ -139,6 +138,16 @@ for (i in 1:nrow(rare)) {
   #rare$author[i];rare$author.fail[i]; rare$author.full[i]; rare$author.shrt[i];
   #i<-i+1
 }
+# Identification of the first author
+temp <- strsplit(rare$author.shrt, split = "; ")
+rare$author.first <- trimws(unlist(lapply(temp, function(l) l[1])), which = "both")
+
+# Removing errors in the filling
+index <- which(is.na(rare$author))
+rare$author.shrt[index] <- NA
+rare$author.full[index] <- NA
+rare$author.numb[index] <- 0
+rare$author.first[index] <- NA
 
 # ----- Title -----
 #Removing unwanted signs
@@ -185,7 +194,14 @@ for (i in 1:nrow(rare)) {
 }
 
 # ----- Journal -----
+# Replacing journal name by journal iso
+temp <- which(is.na(rare$journal))
+rare$journal[temp] <- gsub(pattern = "[[:punct:]]", replacement = "", rare$journal.iso[temp])
+
 # Creating unique journals
+index <- grep(pattern = ";   ", x = rare$journal)
+rare$journal[index] <- gsub(pattern = ";   ", replacement = " ", x = rare$journal[index])
+rare$journal <- gsub(pattern = "[[:space:]]+", replacement = " ", x = rare$journal)
 journals <- subset(x = rare, select = c("journal", "journal.iso"))
 colnames(journals) <- c("original", "iso")
 journals <- journals[!is.na(journals$original), ]
@@ -207,6 +223,28 @@ journals$name[index] <- gsub(pattern = "mis", replacement = "M I S", journals$na
 
 # Triming and removing double spaces
 journals$name <- trimws(gsub(pattern = "[[:space:]]+", replacement = " ", x = journals$name), which = "both")
+
+# Inserting ISO manually<
+index <- grep(pattern = "organization studies", x = journals$name)
+journals$iso[index] <- tolower("Organ. Stud.")
+index <- grep(pattern = "journal of the association for information science and technology", x = journals$name)
+journals$iso[index] <- tolower("J. Assoc. Inf. Sci. Technol.")
+
+index <- which(is.na(journals$iso))
+if (length(index) > 0) {
+  temp <- removeWords(journals$name[index], stopwords(kind = "en"))
+  temp <- gsub(pattern = "[[:space:]]+", replacement = " ", x = temp)
+  temp <- strsplit(x = temp, split = " ")
+  for (i in 1:length(temp)) {
+    for (j in 1:length(temp[[i]])) {
+      temp[[i]][j] <- paste(c(toupper(substr(temp[[i]][j], 1, 1)), 
+                              substr(temp[[i]][j], 2, 5), "."), collapse = "")
+    }
+    temp[[i]] <- paste(unlist(temp[[i]]), collapse = " ")
+    temp[[i]] <- paste(c("xx.", temp[[i]]), collapse = " ")
+  }
+  journals$iso[index] <- tolower(unlist(temp))
+}
 
 # abbrviation of journals names
 journals$abbr <- journals$name
@@ -250,22 +288,23 @@ rare$journal.clean <- NA
 rare$journal.abbr <- NA
 rare$journal.fail <- 0
 # Routine to find and construct clean journals name
-tokens <- unique(na.omit(rare$journal.iso))
+tokens <- unique(na.omit(rare$journal))
 for (i in tokens) {
-  index <- which(x = journals$iso == i)
+  index <- which(x = journals$original == i)
   # Replacing the valid info
-  temp <- which(x = rare$journal.iso == i)
+  temp <- which(x = rare$journal == i)
   if (length(index) != 0) {
-    rare$journal.clean[temp] <- journals$name[index]
-    rare$journal.abbr[temp] <- journals$abbr[index]
+    rare$journal.clean[temp] <- journals$name[index][1]
+    rare$journal.iso[temp] <- journals$iso[index][1]
+    rare$journal.abbr[temp] <- journals$abbr[index][1]
   } else {
     rare$journal.clean[temp] <- rare$journal[temp]
     rare$journal.fail[temp] <- rare$journal.fail[temp]+1
   }
 }
-# Replacing empty spaces with existing data 
-index <- which(is.na(rare$journal.clean))
-rare$journal.clean[index] <- rare$journal[index]
+
+# ----- Number -----
+rare$number <- as.numeric(gsub("[^0-9]", "", rare$number))
 
 # ----- Data entry -----
 rare$entry.type <- as.factor(rare$entry.type)
@@ -274,8 +313,6 @@ rare$entry.type <- as.character(rare$entry.type)
 
 # ----- Keywords -----
 # Formatting author keywords
-index <- grep(pattern = ";   ", x = rare$keywords, fixed = TRUE)
-rare$keywords[index] <- gsub(pattern = ";   ", replacement = " ", x = rare$keywords[index])
 rare$keywords <- trimws(gsub(pattern = "[[:space:]]+", replacement = " ", x = rare$keywords), which = "both" )
 # Counting author keywords
 rare$keywords.num <- NA
@@ -289,8 +326,6 @@ kw.author <- trimws(unlist(strsplit(rare$keywords, split = ";")), which = "both"
 kw.author <- as.data.frame(table(kw.author), stringsAsFactors = FALSE)
 
 # Formating WoS keywords
-index <- grep(pattern = ";   ", x = rare$keywords.plus, fixed = TRUE)
-rare$keywords.plus[index] <- gsub(pattern = ";   ", replacement = " ", x = rare$keywords.plus[index])
 rare$keywords.plus <- trimws(gsub(pattern = "[[:space:]]+", replacement = " ", x = rare$keywords.plus), which = "both" )
 # Counting wos keywords
 rare$keywords.plus.num <- NA
@@ -305,8 +340,6 @@ kw.wos <- as.data.frame(table(kw.wos), stringsAsFactors = FALSE)
 
 # ----- Research area -----
 # Formating research areas
-index <- grep(pattern = ";   ", x = rare$research.areas, fixed = TRUE)
-rare$research.areas[index] <- gsub(pattern = ";   ", replacement = " ", x = rare$research.areas[index])
 index <- grep(pattern = "\\\\&", x = rare$research.areas)
 rare$research.areas[index] <- gsub(pattern = "\\\\&", replacement = "and", x = rare$research.areas[index])
 rare$research.areas <- trimws(gsub(pattern = "[[:space:]]+", replacement = " ", x = rare$research.areas), which = "both" )
@@ -340,11 +373,6 @@ cat.wos <- trimws(unlist(strsplit(rare$web.of.science.categories, split = ";")),
 cat.wos <- as.data.frame(table(cat.wos), stringsAsFactors = FALSE)
 
 # ----- Abstract -----
-
-# --- lost prevention
-#save.set <- rare
-#rare <- save.set
-
 # Manual cleaning an removing of uneeded symbols
 rare$abstract.raw <- rare$abstract
 index <- grep(pattern = "`'", x = rare$abstract)
@@ -371,3 +399,136 @@ rare$abstract[index] <- gsub(pattern = "\\{\\*\\}", replacement = "*", x = rare$
 # Removing undesired spaces
 index <- grep(pattern = "[[:space:]]+", x = rare$abstract)
 rare$abstract[index] <- trimws(gsub(pattern = "[[:space:]]+", replacement = " ", x = rare$abstract[index]), which = "both")
+
+# ----- Cited references -----
+# Creation of a lis of cited references
+raw <- trimws(unlist(strsplit(rare$cited.references, split = ";   ")), which = "both")
+references <- as.data.frame(x = table(raw), stringsAsFactors = FALSE)
+
+# ----- Times cited -----
+rare$times.cited <- as.numeric(sub("\\D*(\\d+).*", "\\1", rare$times.cited))
+
+# ----- Year -----
+rare$year <- as.numeric(sub("\\D*(\\d+).*", "\\1", rare$year))
+
+# ----- Unique ID and database -----
+rare$database <- gsub(pattern = "([^:]+):([^:]+)", replacement = "\\1", x = rare$unique.id)
+rare$unique.id <- gsub(pattern = "([^:]+):([^:]+)", replacement = "\\1\\2", x = rare$unique.id)
+
+# ----- Reprint address -----
+rare$reprint.address <- NA
+for (i in 1:nrow(rare)) {
+  temp <- unlist(strsplit(rare$affiliation[i], ";   "))
+  index <- grep(pattern = "(reprint author)", x = temp, fixed = TRUE)
+  if (length(temp) > 0) {
+    rare$reprint.address[i] <- gsub(pattern = "(^.*)\\(reprint author\\)(.*$)", replacement = "\\2", x = temp[index[1]])
+    rare$reprint.address[i] <- gsub(pattern = "^[^[:alnum:]]*[[:space:]]+(.+$)", replacement = "\\1", x = rare$reprint.address[i])
+    rare$reprint.address[i] <- trimws(x = rare$reprint.address[i], which = "both")
+  }
+}
+
+# ----- Booktitle -----
+# Extracting unique books
+index <- which(!is.na(rare$booktitle))
+books <- as.data.frame(cbind(rare$booktitle[index], rare$book.author[index],
+                             rare$type[index], rare$year[index]), stringsAsFactors = FALSE)
+names(books) <- c("name.raw", "book.author", "type", "year")
+books <- books[!duplicated(paste(books$name.raw, books$year)), ]
+books <- books[order(books$year, books$name.raw), ]
+# Removing unwanted signs
+books$name <- books$name.raw
+index <- grep(pattern = "\\\\&", x = books$name)
+books$name[index] <- gsub(pattern = "\\\\&", replacement = "and", x = books$name[index])
+index <- grep(pattern = "/ ", x = books$name)
+books$name[index] <- gsub(pattern = "/ ", replacement = "/", x = books$name[index])
+index <- grep(pattern = ", proceedings$", x = books$name)
+books$name[index] <- gsub(pattern = "(.*), proceedings$", replacement = "\\1", x = books$name[index])
+
+# Generating short version 
+books$name.short <- books$name
+books$name.short <- removeWords(x = books$name.short, stopwords(kind = "en"))
+books$name.short <- gsub(pattern = "[[:punct:]]", replacement = "", x = books$name.short)
+books$name.short <- trimws(x = gsub(pattern = "[[:space:]]+", replacement = " ", x = books$name.short), which = "both")
+
+temp <- strsplit(x = books$name.short, split = " ")
+temp <- lapply(temp, function(l) l[1:4])
+temp <- lapply(temp, function(l) paste(na.omit(l), collapse = " "))
+books$name.short <- unlist(temp)
+
+# abbrviation of books names
+books$abbr <- books$name.short
+books$abbr <- trimws(gsub(pattern = "[[:space:]]+", replacement = " ", x = books$abbr))
+
+for (i in 1:nrow(books)) {
+  #i <- grep(pattern = "ambio", x = books$name)
+  temp <- unlist(strsplit(x = books$abbr[i], split = " "))
+  name <- character()
+  if (length(temp) > 1) {
+    for (j in 1:length(temp)) {
+      name <- paste(c(name, toupper(substr(temp[j], 1, 1))), collapse = "")
+    }
+  } else if (nchar(temp) > 1) {
+    name <- paste(c(toupper(substr(temp, 1, 1)), tolower(substr(temp, 2, 3))), collapse = "")
+  } else {
+    name <- toupper(substr(temp, 1, 1))
+  }
+  books$abbr[i] <- name
+}
+
+# Distinguishing Journals
+books$a.dup <- books$abbr
+index <- duplicated(books$a.dup)
+i<-2
+while(sum(index) != 0) {
+  books$a.dup[index] <- paste(books$abbr[index], i, sep = "_")
+  i <- i+1
+  index <- duplicated(books$a.dup)
+}
+
+# Constructing final structure
+books <- books[order(books$year, books$a.dup), ]
+books$local.id <- paste("book", 1:nrow(books),sep = "_")
+books <- subset(x = books, select = c("local.id", "name", "book.author", "type", "year",
+                                      "name.short", "a.dup", "name.raw"))
+
+colnames(books) <- c("local.id", "name", "book.author", "type", "year", "name.short", "abbr", "original")
+rownames(books) <- books$local.id
+
+# ----- addition of journal information
+rare$booktitle.clean <- NA
+rare$booktitle.short <- NA
+rare$booktitle.abbr <- NA
+rare$booktitle.id <- NA
+rare$booktitle.fail <- 0
+# Routine to find and construct clean journals name
+index <- which(!is.na(rare$booktitle))
+tokens <- unique(na.omit(paste(rare$booktitle[index], rare$year[index])))
+books$original.year <- paste(books$original, books$year)
+for (i in tokens) {
+  index <- which(x = books$original.year == i)
+  # Replacing the valid info
+  temp <- which(x = paste(rare$booktitle, rare$year) == i)
+  if (length(index) != 0) {
+    rare$booktitle.clean[temp] <- books$name[index]
+    rare$booktitle.short[temp] <- books$name.short[index]
+    rare$booktitle.abbr[temp] <- books$abbr[index]
+    rare$booktitle.id[temp] <- books$local.id[index]
+    } else {
+    rare$booktitle.clean[temp] <- rare$booktitle[temp]
+    rare$booktitle.fail[temp] <- rare$booktitle.fail[temp]+1
+  }
+}
+
+# ----- Source -----
+rare$source <- rare$journal.clean
+rare$source.short <- rare$journal.iso
+rare$source.abbr <- rare$journal.abbr
+
+index <- which(is.na(rare$source))
+rare$source[index] <- rare$booktitle.clean[index]
+rare$source.short[index] <- rare$booktitle.id[index]
+rare$source.abbr[index] <- rare$booktitle.abbr[index]
+
+
+# ----- Single register SR -----
+rare$simple.register <- toupper(with(rare, paste(author.first, source.short, year, sep = "; ")))
