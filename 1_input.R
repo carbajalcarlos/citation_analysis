@@ -40,7 +40,7 @@ for (i in 1:length(list_raw)) {
   index <- grep(pattern = " = {" , x = list_raw[[i]], fixed = TRUE)
   temp <- list_raw[[i]][index]
   temp <- trimws(gsub(pattern = "(^.*)= \\{+(.*)",replacement = "\\1", x = temp), which = "both")
-  temp <- tolower(trimws(x = temp, which = "both"))
+  temp <- tolower(temp)
   fields <- c(fields, temp)
 }
 fields <- as.data.frame(table(fields), stringsAsFactors = FALSE)
@@ -62,7 +62,7 @@ for (i in 1:length(list_raw)) {
   for (j in 1:length(fields)) {
     pat <- paste(c("^", fields[j], "$"), collapse = "")
     column <- grep(pattern = pat, x = colnames(rare))
-    clean <- c("abstract", "author")
+    clean <- c("author", "title", "booktitle", "abstract", "keywords", "keywords.plus", "research.areas")
     if (is.element(el = fields[j], set = clean)) {
       temp <- paste(list_raw[[i]][index[j]:(index[j+1]-1)], collapse = "")
       temp <- gsub(pattern = "[[:space:]]+", replacement = " ", x = temp)
@@ -76,6 +76,7 @@ for (i in 1:length(list_raw)) {
     }
     rare[i,column] <- tolower(temp)
   }
+  if (i%%100 == 0 | i == length(list_raw)) { cat("Articles extracted  ", i, "\n")}
 }
 
 # # Invert order to comply with chronographical order ascending.
